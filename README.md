@@ -89,7 +89,16 @@ Test files: `test_domain` (money, transition table), `test_service` (AC-1…9, 1
 
 ## Time spent
 
-_To be filled in by the author: actual active time (spec / implementation / testing / docs)._
+**Total: ~2 h 40 min** of active work (within the 3-hour limit).
+
+| Phase | Time |
+|---|---|
+| Understanding the brief, design decisions (storage, stack, patterns), `CLAUDE.md` | 20 min |
+| Specification v1.0 (SPEC.md) and review | 30 min |
+| Implementation T1–T7: domain, policy, SQLite store, seed/reset, service, MCP server | 55 min |
+| Verification T6/T8: unit, concurrency, E2E, mutation checks, demo | 30 min |
+| Brief-vs-code cross-check and fixes (spec v1.2) | 10 min |
+| Docs: README, TRACEABILITY, AI_WORKFLOW, trimming, packaging | 15 min |
 
 ## Known limitations
 
