@@ -74,7 +74,7 @@ Each write runs in one SQLite transaction opened with `BEGIN IMMEDIATE`, so writ
 
 ```
 $ make check
-ruff check: All checks passed!   ruff format --check: 29 files already formatted
+ruff check: All checks passed!   ruff format --check: 30 files already formatted
 mypy (strict): Success: no issues found in 24 source files
 pytest: 94 passed
 $ make demo   → Result: allocation 10000.00 | committed 0.00 | paid 300.00 | available 9700.00 USD
