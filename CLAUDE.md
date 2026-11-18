@@ -52,7 +52,7 @@ seed.py          Reset + synthetic seed data.
 - **Unit of Work** — one transaction per use case; commit on success, rollback on any error.
 - **Table-driven State Machine** — `TRANSITIONS: dict[RequestStatus, set[RequestStatus]]`.
 - **Policy map (Strategy-lite)** — `ROLE_PERMISSIONS: dict[Role, set[Permission]]`.
-- **Value Object** — money as integer cents; parse/format in one place.
+- **Money in one place** — integer cents everywhere; `domain.parse_amount` / `format_cents` are the only conversions.
 - **Factory / Composition Root** — `bootstrap.build_server(...)` is the only place that constructs concrete classes.
 - **Dependency Injection** — constructor injection; no global singletons, no service locators.
 
@@ -71,8 +71,12 @@ Do NOT add: State classes per status, Command objects per tool, abstract base cl
 10. Any failed/unauthorized call leaves business state **unchanged**.
 11. Atomic guards are enforced **in SQL** (`BEGIN IMMEDIATE` + conditional `UPDATE ... WHERE status = ? AND <funds sufficient>` + check rowcount), not only in Python.
 
+## MCP SDK notes (mcp 2.x — verify against the installed source, not memory)
+- `FastMCP` no longer exists: use `from mcp.server.mcpserver import MCPServer`; client is `from mcp import Client` with `StdioServerParameters`.
+- Tools return `Annotated[CallToolResult, OutputModel]` via `server._invoke`: the output schema is still published and validated, and errors keep the exact JSON body. Don't raise `ToolError` — the SDK prefixes its message with "Error executing tool ...".
+
 ## Code style
-- Python 3.12, full type hints, `from __future__ import annotations` not needed. ruff + mypy clean.
+- Python 3.12, full type hints, mypy strict + ruff clean (ruff `T20` bans `print` outside `scripts/`).
 - Small functions; names from the domain (`approve_request`, `committed_cents`).
 - Errors: raise `DomainError` subclasses from the service; only `server.py` converts them to MCP error results.
 

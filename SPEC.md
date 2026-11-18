@@ -1,7 +1,7 @@
 # Community Bridge — Emergency Assistance Funding MCP Server
 
-**Specification v1.0 (initial, pre-implementation)** · 2026-11-18
-Status: draft for review. Changes after v1.0 are recorded in [§12 Revisions](#12-revisions).
+**Specification v1.1** · 2026-11-18 (v1.0 = initial pre-implementation version, commit `bb93cbe`)
+Changes after v1.0 are recorded in [§12 Revisions](#12-revisions).
 
 ---
 
@@ -382,3 +382,5 @@ Seed: `fund_bridge_rent` $10,000.00, `fund_bridge_utility` $500.00 (Community Br
 | Version | Date | Change | Reason |
 |---|---|---|---|
 | 1.0 | 2026-11-18 | Initial specification | — |
+| 1.1 | 2026-11-18 | §5.3: successful results carry the output model as `structuredContent` **and** the same JSON as text; error results are built directly (`isError: true`, text = exact JSON error body, no structured content). | mcp 2.x prefixes raised `ToolError` messages with "Error executing tool …", which broke the JSON error contract (found by the E2E test). Text mirror helps clients that ignore `structuredContent`. |
+| 1.1 | 2026-11-18 | §3.4: malformed `purpose`/`status` values sent over MCP are rejected by the SDK's schema validation (enum in `inputSchema`) before business validation; the service still validates them (VALIDATION_ERROR) for non-MCP callers. | Publishing enums in the input schema makes allowed values discoverable to AI clients. |
