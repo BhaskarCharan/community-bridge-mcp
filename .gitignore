@@ -1,0 +1,23 @@
+# Python / tooling
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local runtime data (recreated by `make reset`)
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+logs/
+
+# Assignment brief (not part of the submission)
+*.docx
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
