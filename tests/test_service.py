@@ -5,7 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from support import (
+
+from community_bridge.domain import RequestStatus
+from community_bridge.errors import (
+    IdempotencyConflict,
+    InsufficientFunds,
+    InvalidTransition,
+    ValidationFailed,
+)
+from community_bridge.service import AssistanceService
+from tests.support import (
     CW,
     FIN,
     P1,
@@ -17,15 +26,6 @@ from support import (
     db_state,
     fund_cents,
 )
-
-from community_bridge.domain import RequestStatus
-from community_bridge.errors import (
-    IdempotencyConflict,
-    InsufficientFunds,
-    InvalidTransition,
-    ValidationFailed,
-)
-from community_bridge.service import AssistanceService
 
 
 def test_ac1_full_lifecycle_matches_business_example(
@@ -244,3 +244,33 @@ def test_reads_list_requests_filters_and_participants(service: AssistanceService
     assert len(service.list_participants(FIN)) == 3
     assert service.get_participant(FIN, P1).full_name == "Jordan Sample"
     assert {b.fund.fund_id for b in service.list_funds(FIN)} == {RENT, UTILITY}
+
+
+@pytest.mark.parametrize("bad_id", ["", "   ", "x" * 101])
+def test_malformed_ids_are_validation_errors(
+    service: AssistanceService, db_path: Path, bad_id: str
+) -> None:
+    """SPEC §3.4: malformed ids → VALIDATION_ERROR (well-formed unknown ids → NOT_FOUND)."""
+    before = db_state(db_path)
+    with pytest.raises(ValidationFailed):
+        service.get_request(CW, bad_id)
+    with pytest.raises(ValidationFailed):
+        service.approve_request(PM, bad_id)
+    with pytest.raises(ValidationFailed):
+        service.create_request(
+            CW,
+            participant_id=bad_id,
+            fund_id=RENT,
+            purpose="RENT",
+            description="Rent",
+            amount="10.00",
+        )
+    with pytest.raises(ValidationFailed):
+        service.get_funding_summary(CW, bad_id)
+    assert db_state(db_path) == before
+
+
+def test_blank_reject_reason_is_stored_as_none(service: AssistanceService) -> None:
+    """REQ-REJ-1: reason is optional; whitespace means 'no reason'."""
+    request_id = create(service)
+    assert service.reject_request(PM, request_id, reason="   ").request.decision_reason is None

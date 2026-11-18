@@ -17,7 +17,8 @@ from typing import Any
 import pytest
 from mcp import Client
 from mcp.client.stdio import StdioServerParameters
-from support import CW, FIN, P1, PM, RENT
+
+from tests.support import CW, FIN, P1, PM, RENT
 
 EXPECTED_TOOLS = {
     "whoami",
@@ -132,4 +133,43 @@ async def test_e2e_invalid_amount_is_validation_error(db_path: Path) -> None:
             },
         )
         assert code == "VALIDATION_ERROR"
+        assert (await ok(cw, "list_requests"))["requests"] == []
+
+
+@pytest.mark.anyio
+async def test_e2e_extra_identity_arguments_grant_nothing(db_path: Path) -> None:
+    """REQ-ID-3: identity-like arguments are ignored; the launch identity decides."""
+    async with connect(db_path, CW) as cw:
+        created = await ok(
+            cw,
+            "create_assistance_request",
+            {
+                "participant_id": P1,
+                "fund_id": RENT,
+                "purpose": "RENT",
+                "description": "Rent",
+                "amount": "10.00",
+            },
+        )
+        request_id = created["request"]["request_id"]
+        spoofed = {
+            "request_id": request_id,
+            "staff_id": PM,
+            "role": "PROGRAM_MANAGER",
+            "nonprofit_id": "np_harbor",
+        }
+        assert await error_code(cw, "approve_request", spoofed) == "FORBIDDEN"
+        status = (await ok(cw, "get_request", {"request_id": request_id}))["status"]
+        assert status == "PENDING"
+
+
+@pytest.mark.anyio
+async def test_e2e_schema_rejects_wrong_types_without_side_effects(db_path: Path) -> None:
+    """Malformed arguments (number instead of decimal string, unknown enum) are rejected by
+    the published input schema before business code runs (SPEC §5.3, v1.1)."""
+    base = {"participant_id": P1, "fund_id": RENT, "purpose": "RENT", "description": "Rent"}
+    async with connect(db_path, CW) as cw:
+        for bad in ({"amount": 300}, {"amount": "300.00", "purpose": "VACATION"}):
+            result = await cw.call_tool("create_assistance_request", base | bad)
+            assert result.is_error
         assert (await ok(cw, "list_requests"))["requests"] == []

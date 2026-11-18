@@ -14,6 +14,8 @@ Tool: Claude Code (Claude Opus) in VS Code, driven by `CLAUDE.md` (scope, invari
 
 ## 2. Implementation planning / coding — MCP SDK major version
 
+**Prompt (excerpt):** *"Approved and continue with next steps"* — i.e. execute SPEC §8 tasks T1→T9 under `CLAUDE.md` rules ("use all the SOLID principles and standard LLD patterns … add meaningful comments"), with `make check` as the gate per task.
+
 **Context:** The implementation plan assumed the Python SDK's `mcp.server.fastmcp.FastMCP` (v1 API, from the AI's prior knowledge).
 
 **What happened:** `uv add mcp` resolved **mcp 2.3.0**. Before writing server code, the AI inspected the installed package instead of coding from memory: `mcp/server/fastmcp.py` now only raises `ModuleNotFoundError` ("FastMCP was renamed to MCPServer … other APIs changed"). It then read `MCPServer.tool`, `ToolError`, `func_metadata.convert_result` and `Client`/`StdioServerParameters` in the installed source and wrote the adapter against that.
@@ -34,5 +36,7 @@ Tool: Claude Code (Claude Opus) in VS Code, driven by `CLAUDE.md` (scope, invari
 | M1: availability condition in `try_reserve` replaced with `AND 1 = 1` | 3 tests fail. Concurrency test: overspending writes are stopped only by the DB `CHECK` constraint, surfacing as `IntegrityError` crashes instead of `INSUFFICIENT_FUNDS` |
 | M2: `BEGIN IMMEDIATE` → deferred `BEGIN` (guard kept) | Concurrency test fails: `OperationalError('database is locked')` for competing approvals |
 | Restored | 82/82 then passing |
+
+**c) Brief-vs-code cross-check.** Prompt: *"once again cross check the document file with our current code in detail; implement if anything is missed"*. The AI re-read the brief clause by clause and probed the running server. Findings: SPEC §3.4 required malformed ids → VALIDATION_ERROR, but `get_request("")` returned NOT_FOUND (spec/code drift, fixed); "tool arguments must not grant permissions" and "logs separate from protocol" were true but untested (added AC-21 spoofed-argument E2E test and AC-23 raw JSON-RPC stdout test); duplicate payment/approval was only tested sequentially (added AC-20 concurrent tests). The new raw stdio test initially lost one response because it closed stdin before the tool call finished — a harness bug, fixed by reading responses before closing. **Evidence:** 94 tests pass; probe output showed spoofed `role`/`staff_id` arguments are ignored and FORBIDDEN is returned.
 
 **Corrections during this work (honest record):** the first M1 attempt used `sed` to delete the guard line, which also deleted the SQL string's closing `"""` (SyntaxError, not a valid mutation) — redone as an in-place substitution. A regex used to rewrite tool return types over-matched one helper (`_transition_out`); caught in the grep output and reverted before commit.

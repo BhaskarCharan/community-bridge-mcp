@@ -7,11 +7,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from support import CW, FIN, H_CW, H_FUND, H_P1, H_PM, P1, PM, RENT, create, db_state
 
 from community_bridge.errors import Forbidden, NotFound, Unauthenticated
 from community_bridge.policy import Permission
 from community_bridge.service import AssistanceService
+from tests.support import CW, FIN, H_CW, H_FUND, H_P1, H_PM, P1, PM, RENT, create, db_state
 
 
 def _create_args(**overrides: str) -> dict[str, str]:

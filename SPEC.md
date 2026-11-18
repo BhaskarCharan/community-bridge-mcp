@@ -1,6 +1,6 @@
 # Community Bridge — Emergency Assistance Funding MCP Server
 
-**Specification v1.1** · 2026-11-18 (v1.0 = initial pre-implementation version, commit `bb93cbe`)
+**Specification v1.2** · 2026-11-18 (initial pre-implementation v1.0 preserved in [docs/SPEC_v1.0_initial.md](docs/SPEC_v1.0_initial.md), commit `bb93cbe`)
 Changes after v1.0 are recorded in [§12 Revisions](#12-revisions).
 
 ---
@@ -318,6 +318,10 @@ Seed: `fund_bridge_rent` $10,000.00, `fund_bridge_utility` $500.00 (Community Br
 | AC-17 | Server via stdio | Client lists tools | 11 tools with input + output schemas; stdout contains only JSON-RPC |
 | AC-18 | `make reset` run twice | — | Same clean seed state both times |
 | AC-19 | Any sequence of operations | — | Fund `committed` = Σ APPROVED amounts, `paid` = Σ PAID amounts |
+| AC-20 | One PENDING / one APPROVED $300 request | 8 simultaneous approvals / 8 simultaneous payments of that request | Exactly 1 succeeds, 7 INVALID_TRANSITION; amount reserved / paid once |
+| AC-21 | Server launched as case worker | `approve_request` with extra args `staff_id`, `role`, `nonprofit_id` naming a manager | Extra args ignored; FORBIDDEN; request still PENDING |
+| AC-22 | — | Id `""`, `"   "` or > 100 chars | VALIDATION_ERROR (well-formed unknown id → NOT_FOUND) |
+| AC-23 | Server running with INFO logging | Raw JSON-RPC session over stdio | Every stdout line is JSON-RPC; log lines appear on stderr |
 
 ---
 
@@ -383,4 +387,5 @@ Seed: `fund_bridge_rent` $10,000.00, `fund_bridge_utility` $500.00 (Community Br
 |---|---|---|---|
 | 1.0 | 2026-11-18 | Initial specification | — |
 | 1.1 | 2026-11-18 | §5.3: successful results carry the output model as `structuredContent` **and** the same JSON as text; error results are built directly (`isError: true`, text = exact JSON error body, no structured content). | mcp 2.x prefixes raised `ToolError` messages with "Error executing tool …", which broke the JSON error contract (found by the E2E test). Text mirror helps clients that ignore `structuredContent`. |
+| 1.2 | 2026-11-18 | Added AC-20…AC-23 (concurrent duplicate approve/pay, spoofed identity arguments, malformed ids, stdout purity). Blank rejection `reason` is stored as null. | Cross-check of the brief against code found these behaviors implemented or required but not pinned by an acceptance criterion/test; id validation (§3.4) was specified but not yet enforced — fixed in code. |
 | 1.1 | 2026-11-18 | §3.4: malformed `purpose`/`status` values sent over MCP are rejected by the SDK's schema validation (enum in `inputSchema`) before business validation; the service still validates them (VALIDATION_ERROR) for non-MCP callers. | Publishing enums in the input schema makes allowed values discoverable to AI clients. |

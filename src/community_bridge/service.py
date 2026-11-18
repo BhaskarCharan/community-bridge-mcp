@@ -49,6 +49,7 @@ log = logging.getLogger(__name__)
 
 MAX_DESCRIPTION_LEN = 500
 MAX_REASON_LEN = 500
+MAX_ID_LEN = 100
 _IDEMPOTENCY_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,100}$")
 
 
@@ -115,6 +116,7 @@ class AssistanceService:
         """REQ-READ-2. Raises NotFound for unknown or other-tenant ids (REQ-TEN-1)."""
         with self._uow_factory() as uow:
             caller = self._authorize(uow, staff_id, Permission.READ)
+            _validate_id(participant_id, "participant_id")
             participant = uow.participants.get(caller.nonprofit_id, participant_id)
             if participant is None:
                 raise NotFound("Participant not found.", {"participant_id": participant_id})
@@ -134,6 +136,7 @@ class AssistanceService:
             balances = self._fund_balances(uow, caller.nonprofit_id)
             if fund_id is None:
                 return balances
+            _validate_id(fund_id, "fund_id")
             selected = [b for b in balances if b.fund.fund_id == fund_id]
             if not selected:
                 raise NotFound("Fund not found.", {"fund_id": fund_id})
@@ -151,6 +154,9 @@ class AssistanceService:
         with self._uow_factory() as uow:
             caller = self._authorize(uow, staff_id, Permission.READ)
             status_filter = _parse_enum(RequestStatus, status, "status") if status else None
+            for field, value in (("fund_id", fund_id), ("participant_id", participant_id)):
+                if value is not None:
+                    _validate_id(value, field)
             return uow.requests.list(
                 caller.nonprofit_id,
                 status=status_filter,
@@ -188,6 +194,8 @@ class AssistanceService:
             amount_cents = parse_amount(amount)
             purpose_value = _parse_enum(Purpose, purpose, "purpose")
             clean_description = _validate_text(description, "description", MAX_DESCRIPTION_LEN)
+            _validate_id(participant_id, "participant_id")
+            _validate_id(fund_id, "fund_id")
             if idempotency_key is not None and not _IDEMPOTENCY_KEY_PATTERN.fullmatch(
                 idempotency_key
             ):
@@ -287,7 +295,8 @@ class AssistanceService:
         with self._uow_factory(write=True) as uow:
             caller = self._authorize(uow, staff_id, Permission.DECIDE_REQUEST)
             clean_reason = (
-                _validate_text(reason, "reason", MAX_REASON_LEN, required=False)
+                # An empty/whitespace reason is stored as "no reason" (NULL), not "".
+                _validate_text(reason, "reason", MAX_REASON_LEN, required=False) or None
                 if reason is not None
                 else None
             )
@@ -348,6 +357,7 @@ class AssistanceService:
 
     @staticmethod
     def _load_request(uow: UnitOfWork, caller: Caller, request_id: str) -> AssistanceRequest:
+        _validate_id(request_id, "request_id")
         request = uow.requests.get(caller.nonprofit_id, request_id)
         if request is None:
             # Same answer whether the id doesn't exist or belongs to another nonprofit,
@@ -394,6 +404,19 @@ def _parse_enum[E: (Purpose, RequestStatus)](enum_type: type[E], value: str, fie
             f"{field} must be one of: {', '.join(m.value for m in enum_type)}.",
             {"field": field, "value": value},
         ) from None
+
+
+def _validate_id(value: str, field: str) -> None:
+    """SPEC §3.4: ids are non-empty strings of at most MAX_ID_LEN characters.
+
+    Malformed ids are a VALIDATION_ERROR; well-formed but unknown (or other-tenant) ids
+    are NOT_FOUND — so callers can tell a typo from a missing record.
+    """
+    if not value or not value.strip() or len(value) > MAX_ID_LEN:
+        raise ValidationFailed(
+            f"{field} must be a non-empty id of at most {MAX_ID_LEN} characters.",
+            {"field": field},
+        )
 
 
 def _validate_text(value: str, field: str, max_len: int, *, required: bool = True) -> str:

@@ -4,7 +4,7 @@ A headless MCP server (stdio) for submitting, approving and paying emergency-ass
 
 | Document | Purpose |
 |---|---|
-| [SPEC.md](SPEC.md) | Specification: requirements (REQ-IDs), business rules, data model, MCP interface, acceptance criteria, plan, production security, open questions, **revisions** |
+| [SPEC.md](SPEC.md) · [initial v1.0](docs/SPEC_v1.0_initial.md) | Specification: requirements (REQ-IDs), business rules, data model, MCP interface, acceptance criteria, plan, production security, open questions, **revisions** |
 | [TRACEABILITY.md](TRACEABILITY.md) | Requirement → code → test mapping |
 | [AI_WORKFLOW.md](AI_WORKFLOW.md) | Three AI-assisted examples with evidence and corrections |
 | [CLAUDE.md](CLAUDE.md) | Rules given to the AI coding agent (scope, invariants, architecture) |
@@ -74,13 +74,15 @@ Each write runs in one SQLite transaction opened with `BEGIN IMMEDIATE`, so writ
 
 ```
 $ make check
-ruff check: All checks passed!   ruff format --check: 27 files already formatted
-mypy (strict): Success: no issues found in 22 source files
-pytest: 85 passed
+ruff check: All checks passed!   ruff format --check: 29 files already formatted
+mypy (strict): Success: no issues found in 24 source files
+pytest: 94 passed
 $ make demo   → Result: allocation 10000.00 | committed 0.00 | paid 300.00 | available 9700.00 USD
 ```
 
-Test files: `test_domain` (money, transition table), `test_service` (AC-1…9, 14–16, 19), `test_permissions` (AC-10, 11, 13), `test_concurrency` (AC-12), `test_seed` (AC-18), `test_e2e_mcp` (AC-17 + lifecycle, auth and validation over real stdio).
+Test files: `test_domain` (money, transition table), `test_service` (AC-1…9, 14–16, 19), `test_permissions` (AC-10, 11, 13), `test_concurrency` (AC-12, AC-20), `test_seed` (AC-18), `test_e2e_mcp` (AC-17, AC-21 + lifecycle, auth and validation over the SDK client), `test_stdio_protocol` (AC-23: raw JSON-RPC, stdout purity, logs on stderr).
+
+**Failed checks during development** (fixed, details in AI_WORKFLOW.md): first E2E run failed 3 tests (SDK error-message prefix broke the JSON error contract); first raw-stdio test lost a response because it closed stdin before the call finished (test harness bug).
 
 **Not run / not verified:** manual use from a GUI MCP client (Claude Desktop) — verified only through the SDK client in the E2E test and demo. Concurrency was tested with threads in one process (separate SQLite connections), not with multiple server processes.
 
