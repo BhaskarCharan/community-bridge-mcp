@@ -1,5 +1,5 @@
 # Community Bridge MCP server — common commands. All run through uv (pinned via uv.lock).
-.PHONY: install reset run test lint typecheck check demo
+.PHONY: install reset run test lint typecheck check demo package
 
 DB ?= data/community_bridge.db
 
@@ -27,3 +27,10 @@ check: lint typecheck test   ## Verification gate: must be green before a task i
 demo:             ## Reset DB, then run the scripted MCP client demo (no LLM)
 	$(MAKE) reset
 	CB_DB_PATH=$(DB) uv run python scripts/demo.py
+
+package:          ## Zip of committed files + git history (proves spec-before-code), no .venv/data
+	rm -rf dist && mkdir -p dist
+	git clone -q . dist/community-bridge
+	git -C dist/community-bridge remote remove origin
+	cd dist && zip -qr community-bridge.zip community-bridge && rm -rf community-bridge
+	@echo "Created dist/community-bridge.zip"

@@ -19,6 +19,7 @@ make reset       # create + seed data/community_bridge.db (separate from startup
 make check       # ruff lint + format check, mypy --strict, pytest
 make demo        # reset, then scripted MCP client: discover → create → approve → pay → summary
 make run CB_STAFF_ID=stf_bridge_cw   # start the stdio server as one identity
+make package     # dist/community-bridge.zip: committed files + git history (no .venv/data)
 ```
 
 The server never creates or seeds data; if the DB is missing it exits and tells you to run `make reset`. Logs go to stderr (`CB_LOG_LEVEL`, default INFO); stdout carries only MCP JSON-RPC.
@@ -66,9 +67,9 @@ Pragmatic SOLID: one responsibility per module; table-driven transitions and rol
 
 ## How competing approvals are handled
 
-Each write runs in one SQLite transaction opened with `BEGIN IMMEDIATE`, so writers serialize on the write lock. The reservation is a single conditional statement — `UPDATE funds SET committed = committed + :amt WHERE … AND allocation − committed − paid >= :amt` — and success is read from `rowcount`; the status change is a compare-and-set (`WHERE status = 'PENDING'`). Any failure rolls back the whole unit. DB `CHECK (committed + paid <= allocation)` is a final safety net.
+Writes run in one SQLite transaction opened with `BEGIN IMMEDIATE` (writers serialize); the reservation is one conditional `UPDATE … WHERE allocation − committed − paid >= :amount` checked via `rowcount`, and the status change is a compare-and-set (`WHERE status = 'PENDING'`). Failures roll back everything; a DB `CHECK` is the last safety net (SPEC §3.3).
 
-**Verification:** `test_ac12_concurrent_approvals_never_overspend` releases 10 threads (separate connections) through a barrier to approve 10 × $1,500 against $10,000: exactly 6 succeed, 4 get `INSUFFICIENT_FUNDS`, committed = $9,000, balances equal request sums. A mutation check showed the test fails when either the SQL guard or `BEGIN IMMEDIATE` is removed (AI_WORKFLOW.md §3b).
+**Verified by** `tests/test_concurrency.py`: 10 threads (own connections, released by a barrier) approve 10 × $1,500 against $10,000 → exactly 6 succeed, 4 `INSUFFICIENT_FUNDS`; 8 simultaneous approvals or payments of one request → exactly one effect. Removing the SQL guard or `BEGIN IMMEDIATE` makes the test fail (mutation check, AI_WORKFLOW.md §3b).
 
 ## Results (actual, 2026-11-18)
 

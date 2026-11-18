@@ -21,3 +21,6 @@ logs/
 .DS_Store
 .vscode/
 .idea/
+
+# Packaged submission
+dist/

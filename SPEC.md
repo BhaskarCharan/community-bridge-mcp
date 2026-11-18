@@ -7,9 +7,7 @@ Changes after v1.0 are recorded in [§12 Revisions](#12-revisions).
 
 ## 1. Overview
 
-Community Bridge pays participants' essential expenses (rent, utilities, transportation) from grant **funds** with fixed **allocations**. We replace spreadsheet tracking with a **headless MCP server** (stdio) so AI assistants and other MCP clients can submit, decide, pay and report on assistance requests.
-
-The system hosts **two nonprofits** with strict data isolation.
+A **headless MCP server** (stdio) replacing spreadsheets: staff of **two isolated nonprofits** submit, decide, pay (simulated) and report on assistance requests funded from grant **funds** with fixed **allocations**.
 
 ### 1.1 Users
 
@@ -19,25 +17,16 @@ The system hosts **two nonprofits** with strict data isolation.
 | Program manager | `PROGRAM_MANAGER` | Read everything; **approve / reject** requests |
 | Finance staff | `FINANCE` | Read everything; **record payments** |
 
-### 1.2 Workflows
+### 1.2 Workflows and goals
 
-1. **Submit** — case worker creates a request (participant, fund, purpose, amount) → `PENDING`. No money reserved.
-2. **Decide** — program manager approves (reserves full amount) or rejects (no money effect).
-3. **Pay** — finance records a simulated payment for an approved request → `PAID`. Money moves committed → paid.
-4. **Report** — any staff retrieves participants, funds, requests and funding summaries.
+**Submit** (case worker → `PENDING`, nothing reserved) → **Decide** (manager approves = reserve full amount, or rejects) → **Pay** (finance; committed → paid) → **Report** (any role).
+Goals: exact-cent accounting that never overspends; no duplicate financial effects under retries or concurrency; strict role and tenant boundaries with identity never taken from tool input; discoverable, schema-validated tools.
 
-### 1.3 Goals
-
-- Correct, auditable fund accounting with exact cents; never overspend.
-- No duplicate financial effects under retries or concurrency.
-- Strict role and nonprofit boundaries; identity never taken from tool input.
-- Discoverable, schema-validated MCP tools with structured results and errors.
-
-### 1.4 Non-goals (out of scope)
+### 1.3 Non-goals (out of scope)
 
 UI; real payments/banking; OAuth implementation; HTTP transport/hosting; custom AI agent or LLM calls; MCP resources and prompts; participant intake and grant applications; partial payments, cancellations, refunds, payment failures; editing requests; multi-currency; pagination; audit-log tables beyond who/when fields on the request.
 
-### 1.5 Assumptions
+### 1.4 Assumptions
 
 | ID | Assumption |
 |---|---|
@@ -149,24 +138,17 @@ Example (AC-1): fund $10,000.00. Approve $300.00 → available $9,700.00, commit
 
 ### 3.3 Atomicity & concurrency
 
-Each use case runs in one **Unit of Work** = one SQLite transaction started with `BEGIN IMMEDIATE` (takes the database write lock up front, so competing writers serialize; `busy_timeout` = 5 s).
+Each use case is one **Unit of Work** = one SQLite transaction opened with `BEGIN IMMEDIATE` (write lock taken up front, so writers serialize; `busy_timeout` 5 s). Approve = tenant-scoped load → transition check → **conditional reserve in SQL** → compare-and-set status → commit; any error rolls everything back:
 
-Approve, inside the transaction:
-1. Load request scoped by `nonprofit_id` → else `NOT_FOUND`.
-2. Check transition allowed from current status → else `INVALID_TRANSITION`.
-3. Conditional reserve — the guard lives **in SQL**, not only in Python:
-   ```sql
-   UPDATE funds SET committed_cents = committed_cents + :amount
-   WHERE id = :fund_id AND nonprofit_id = :np
-     AND allocation_cents - committed_cents - paid_cents >= :amount;
-   ```
-   rowcount 0 → `INSUFFICIENT_FUNDS`, rollback.
-4. Conditional status change: `UPDATE assistance_requests SET status='APPROVED', ... WHERE id=:id AND nonprofit_id=:np AND status='PENDING'`; rowcount 0 → `INVALID_TRANSITION`, rollback.
-5. Commit. Any exception → rollback → state unchanged.
+```sql
+UPDATE funds SET committed_cents = committed_cents + :amount
+WHERE id = :fund_id AND nonprofit_id = :np
+  AND allocation_cents - committed_cents - paid_cents >= :amount;   -- rowcount 0 → INSUFFICIENT_FUNDS
+UPDATE assistance_requests SET status = 'APPROVED', ...
+WHERE id = :id AND nonprofit_id = :np AND status = 'PENDING';       -- rowcount 0 → INVALID_TRANSITION
+```
 
-Pay follows the same pattern (`WHERE status='APPROVED'`, then `committed −= amount, paid += amount`). DB `CHECK` constraints are a final safety net.
-
-**Why it's safe:** two approvals can't both read stale balances because the second transaction cannot start writing until the first commits, and the reserve `UPDATE` re-evaluates `available` at write time. Verified by a multi-thread test (AC-12).
+Pay is the same pattern (`status = 'APPROVED'`; `committed −= amount, paid += amount`). DB `CHECK` constraints are the final safety net. A second writer can't act on a stale balance: it waits for the lock, and the guard re-evaluates `available` at write time (verified by AC-12/AC-20).
 
 ### 3.4 Validation
 
@@ -221,10 +203,10 @@ assistance_requests (
             UNIQUE (nonprofit_id, idempotency_key))
 ```
 
-- **Ownership:** every business row carries `nonprofit_id`; composite FKs make a cross-tenant request impossible at the DB level.
-- **Money:** `*_cents` integers; parsing/formatting in one `Money` helper (`Decimal` for parsing only, quantized to cents).
-- **Balances** are stored on `funds` (updated atomically) rather than recomputed, so the SQL guard can check them in one statement. A test asserts they equal the sum of APPROVED (committed) and PAID (paid) requests.
-- IDs: readable prefixed strings for seed data (`fund_bridge_rent`); requests get `req_` + 12 hex chars. Timestamps: ISO-8601 UTC. `PRAGMA foreign_keys=ON`, `journal_mode=WAL`.
+- **Ownership:** every business row carries `nonprofit_id`; composite FKs make a cross-tenant request impossible at DB level.
+- **Money:** integer `*_cents`; only `parse_amount` / `format_cents` convert (regex-validated string → `Decimal` → cents).
+- **Balances** are stored on `funds` so one conditional `UPDATE` can guard them; a test asserts they always equal Σ APPROVED / Σ PAID amounts (AC-19).
+- Ids: readable seed ids (`fund_bridge_rent`), requests `req_` + 12 hex. Timestamps ISO-8601 UTC. `foreign_keys=ON`, WAL.
 
 ---
 
@@ -286,10 +268,9 @@ Malformed arguments (wrong types/missing required fields) are rejected by the SD
 
 ## 6. Permissions & identity enforcement
 
-- **Launch-time identity:** the MCP client config sets `CB_STAFF_ID` (e.g. `stf_bridge_pm`). The server re-resolves it from the DB on each call to a `Caller` (role + nonprofit). Nothing else identifies the caller.
-- **Policy map:** `ROLE_PERMISSIONS = {CASE_WORKER: {READ, CREATE_REQUEST}, PROGRAM_MANAGER: {READ, DECIDE_REQUEST}, FINANCE: {READ, RECORD_PAYMENT}}`; each service method declares the permission it needs.
-- **Tenant scoping:** repositories take `nonprofit_id` as a required argument on every method; there is no unscoped query API.
-- **Prompt-injection resistance:** descriptions/reasons are stored and returned verbatim, never parsed for instructions; no input field can influence role or tenant.
+- **Identity:** the client config sets `CB_STAFF_ID`; the server re-resolves it from the DB on every call to a `Caller` (role + nonprofit). No tool has an identity parameter; extra arguments are ignored (AC-21).
+- **Roles:** `ROLE_PERMISSIONS = {CASE_WORKER: {READ, CREATE_REQUEST}, PROGRAM_MANAGER: {READ, DECIDE_REQUEST}, FINANCE: {READ, RECORD_PAYMENT}}`; each service method declares its permission.
+- **Tenancy:** every repository method requires `nonprofit_id`; there is no unscoped query API. Stored text is inert data (AC-16).
 
 ---
 
@@ -347,21 +328,15 @@ Seed: `fund_bridge_rent` $10,000.00, `fund_bridge_utility` $500.00 (Community Br
 
 ## 9. Production security (HTTP-hosted, not implemented)
 
-- **Transport:** MCP Streamable HTTP behind TLS. The MCP server is an **OAuth 2.1 resource server**; the existing authorization provider issues tokens.
-- **Discovery:** server publishes Protected Resource Metadata (RFC 9728) naming the authorization server; unauthenticated calls get `401` + `WWW-Authenticate` pointing to it. Clients use authorization code + PKCE and request tokens for this server's resource URI (RFC 8707).
-- **Token validation (every request):** signature via the provider's JWKS (cached, key rotation), `iss`, `aud` = this server, `exp`/`nbf`, required scope (e.g. `assistance:use`); or token introspection for opaque tokens. Never forward the token downstream (no token passthrough).
-- **Mapping to business permissions:** `(iss, sub)` → `staff` record → nonprofit membership + role **from our database** (token scopes are a coarse gate; roles/tenant are authoritative server-side). A per-request `Caller` replaces the process-level `CB_STAFF_ID`; the service layer is unchanged. Staff with multiple nonprofits would select one explicitly, validated against memberships.
-- **Also:** short-lived tokens, deactivation takes effect immediately (DB lookup per request), audit logging of actor + action, rate limiting, origin validation.
+- **Role:** over Streamable HTTP + TLS, the MCP server is an **OAuth 2.1 resource server** for the existing authorization provider. It publishes Protected Resource Metadata (RFC 9728); unauthenticated calls get `401` + `WWW-Authenticate`. Clients use auth code + PKCE with this server as the resource (RFC 8707).
+- **Token validation, every request:** JWKS signature (cached, rotation-aware), `iss`, `aud` = this server, `exp`/`nbf`, required scope — or introspection for opaque tokens. Tokens are never passed through downstream.
+- **Mapping:** `(iss, sub)` → `staff` row → nonprofit membership + role **from our database** (scopes are only a coarse gate). A per-request `Caller` replaces `CB_STAFF_ID`; the service layer is unchanged. Multi-nonprofit users pick a tenant, validated against memberships. Plus: short-lived tokens, immediate deactivation, audit log, rate limits, origin checks.
 
 ---
 
 ## 10. Testing strategy
 
-- pytest; each test gets a fresh seeded temp SQLite file; no DB mocks.
-- Service-level tests for ACs (fast), every failure asserting state unchanged.
-- Concurrency test with threads + barrier, each thread its own connection (AC-12).
-- E2E: spawn the real server over stdio with the SDK client, run AC-1 across three identities, plus one UNAUTHENTICATED and one FORBIDDEN case.
-- `make check` = ruff + mypy + pytest. Results (including failures/unrun checks) reported in README.
+pytest on a fresh seeded temp SQLite file per test (no DB mocks); every failure case asserts state unchanged. Service-level ACs; thread + barrier concurrency tests; E2E over real stdio with the SDK client and with raw JSON-RPC. `make check` = ruff + mypy + pytest; results, including failures, in README.
 
 ---
 
@@ -387,5 +362,6 @@ Seed: `fund_bridge_rent` $10,000.00, `fund_bridge_utility` $500.00 (Community Br
 |---|---|---|---|
 | 1.0 | 2026-11-18 | Initial specification | — |
 | 1.1 | 2026-11-18 | §5.3: successful results carry the output model as `structuredContent` **and** the same JSON as text; error results are built directly (`isError: true`, text = exact JSON error body, no structured content). | mcp 2.x prefixes raised `ToolError` messages with "Error executing tool …", which broke the JSON error contract (found by the E2E test). Text mirror helps clients that ignore `structuredContent`. |
-| 1.2 | 2026-11-18 | Added AC-20…AC-23 (concurrent duplicate approve/pay, spoofed identity arguments, malformed ids, stdout purity). Blank rejection `reason` is stored as null. | Cross-check of the brief against code found these behaviors implemented or required but not pinned by an acceptance criterion/test; id validation (§3.4) was specified but not yet enforced — fixed in code. |
 | 1.1 | 2026-11-18 | §3.4: malformed `purpose`/`status` values sent over MCP are rejected by the SDK's schema validation (enum in `inputSchema`) before business validation; the service still validates them (VALIDATION_ERROR) for non-MCP callers. | Publishing enums in the input schema makes allowed values discoverable to AI clients. |
+| 1.2 | 2026-11-18 | Added AC-20…AC-23 (concurrent duplicate approve/pay, spoofed identity arguments, malformed ids, stdout purity). Blank rejection `reason` is stored as null. | Cross-check of the brief against code found these behaviors implemented or required but not pinned by an acceptance criterion/test; id validation (§3.4) was specified but not yet enforced — fixed in code. |
+| 1.3 | 2026-11-18 | Editorial: condensed narrative in §1, §3.3, §4, §6, §9, §10. No behavior change. | Brief's ~3-page guideline for written documentation. |
