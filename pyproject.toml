@@ -1,0 +1,39 @@
+[project]
+name = "community-bridge"
+version = "0.1.0"
+description = "Headless MCP server for emergency assistance funding (take-home exercise)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "mcp==2.3.0",
+]
+
+[dependency-groups]
+dev = [
+    "mypy==2.4.1",
+    "pytest==9.2.0",
+    "ruff==0.17.5",
+]
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# E/F: errors, I: import order, B: bugbear, UP: modern syntax, T20: forbid print() (stdout is MCP-only)
+select = ["E", "F", "I", "B", "UP", "T20"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*" = ["T20"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src", "tests", "scripts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
