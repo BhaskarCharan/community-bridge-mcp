@@ -11,12 +11,13 @@ Two nonprofits, strict tenant isolation, exact-cent money, atomic approvals. 3-h
 ## Commands
 | Command | Purpose |
 |---|---|
-| `make install` | `uv sync` — install pinned deps (Python 3.12, `uv.lock`) |
+| `make install` | `uv sync --locked` — install pinned deps (Python 3.12, `uv.lock`) |
 | `make reset` | Recreate + seed the SQLite DB (separate from startup) |
-| `make run` | Start server over stdio (requires `CB_STAFF_ID`) |
+| `make run` | Start server over stdio as `CB_STAFF_ID` (without it, every call → UNAUTHENTICATED) |
 | `make test` | `uv run pytest -v` |
 | `make check` | ruff lint + format check + mypy + pytest — **must pass before a task is done** |
 | `make demo` | Reset DB, run scripted MCP client demo (no LLM) |
+| `make package` | `dist/community-bridge.zip` of committed files + git history |
 
 Env vars: `CB_STAFF_ID` (fixture identity, required), `CB_DB_PATH` (default `data/community_bridge.db`).
 

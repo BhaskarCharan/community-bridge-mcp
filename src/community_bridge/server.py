@@ -67,7 +67,13 @@ def _invoke(tool_name: str, fn: Callable[[], BaseModel]) -> CallToolResult:
     except Exception:
         log.exception("tool=%s failed unexpectedly", tool_name)
         return _error_result(
-            {"error": {"code": ErrorCode.INTERNAL_ERROR.value, "message": "Internal error."}}
+            {
+                "error": {
+                    "code": ErrorCode.INTERNAL_ERROR.value,
+                    "message": "Internal error.",
+                    "details": {},
+                }
+            }
         )
 
 

@@ -1,6 +1,6 @@
 # Community Bridge — Emergency Assistance Funding MCP Server
 
-**Specification v1.3** · 2026-11-18 (initial pre-implementation v1.0 preserved in [docs/SPEC_v1.0_initial.md](docs/SPEC_v1.0_initial.md), commit `5e5510b`)
+**Specification v1.4** · 2026-11-18 (initial pre-implementation v1.0 preserved in [docs/SPEC_v1.0_initial.md](docs/SPEC_v1.0_initial.md), commit `5e5510b`)
 Changes after v1.0 are recorded in [§12 Revisions](#12-revisions).
 
 ---
@@ -227,25 +227,23 @@ Request       { request_id, participant_id, fund_id, purpose, description, amoun
 
 ### 5.2 Tools
 
-| Tool | Input | Output | Side effects | Errors (besides UNAUTHENTICATED) |
-|---|---|---|---|---|
-| `whoami` | — | `Caller` | none | — |
-| `list_participants` | — | `{participants: [Participant]}` | none | — |
-| `get_participant` | `participant_id` | `Participant` | none | NOT_FOUND |
-| `list_funds` | — | `{funds: [FundSummary]}` | none | — |
-| `get_funding_summary` | `fund_id?` | `{currency, funds: [FundSummary], totals: {allocation, committed, paid, available, pending_requested}}` | none | NOT_FOUND |
-| `create_assistance_request` | `participant_id, fund_id, purpose, description, amount, idempotency_key?` | `{request: Request, idempotent_replay: bool}` | inserts PENDING request | FORBIDDEN, VALIDATION_ERROR, NOT_FOUND, IDEMPOTENCY_CONFLICT |
-| `list_requests` | `status?, fund_id?, participant_id?` | `{requests: [Request]}` (newest first) | none | VALIDATION_ERROR |
-| `get_request` | `request_id` | `Request` | none | NOT_FOUND |
-| `approve_request` | `request_id` | `{request: Request, fund: FundSummary}` | status→APPROVED, committed += amount | FORBIDDEN, NOT_FOUND, INVALID_TRANSITION, INSUFFICIENT_FUNDS |
-| `reject_request` | `request_id, reason?` | `{request: Request, fund: FundSummary}` | status→REJECTED | FORBIDDEN, NOT_FOUND, INVALID_TRANSITION, VALIDATION_ERROR |
-| `record_payment` | `request_id` | `{request: Request, fund: FundSummary}` | status→PAID, committed→paid, payment_reference set | FORBIDDEN, NOT_FOUND, INVALID_TRANSITION |
-
-Tool descriptions (shown to AI clients) state the role required and the money effect, e.g. *"Approve a PENDING request and reserve its full amount against its fund. Program managers only. Fails with INSUFFICIENT_FUNDS if the fund's available balance is too low."*
+| Tool | Description (published to clients) | Input | Output | Side effects | Errors (besides UNAUTHENTICATED) |
+|---|---|---|---|---|---|
+| `whoami` | Staff identity this server acts as: role, nonprofit, permissions | — | `Caller` | none | — |
+| `list_participants` | Participants of your nonprofit | — | `{participants: [Participant]}` | none | — |
+| `get_participant` | One participant of your nonprofit | `participant_id` | `Participant` | none | VALIDATION_ERROR, NOT_FOUND |
+| `list_funds` | Your funds with allocation, committed, paid, available | — | `{funds: [FundSummary]}` | none | — |
+| `get_funding_summary` | Per-fund balances (available = allocation − committed − paid; pending informational) plus totals | `fund_id?` | `{currency, funds: [FundSummary], totals: {allocation, committed, paid, available, pending_requested}}` | none | VALIDATION_ERROR, NOT_FOUND |
+| `create_assistance_request` | Submit a PENDING request. CASE_WORKER only. Does **not** reserve money | `participant_id, fund_id, purpose, description, amount, idempotency_key?` | `{request: Request, idempotent_replay: bool}` | inserts PENDING request | FORBIDDEN, VALIDATION_ERROR, NOT_FOUND, IDEMPOTENCY_CONFLICT |
+| `list_requests` | Your nonprofit's requests, newest first, optional filters | `status?, fund_id?, participant_id?` | `{requests: [Request]}` | none | VALIDATION_ERROR |
+| `get_request` | One request with decision/payment details | `request_id` | `Request` | none | VALIDATION_ERROR, NOT_FOUND |
+| `approve_request` | Approve a PENDING request and reserve its full amount. PROGRAM_MANAGER only | `request_id` | `{request: Request, fund: FundSummary}` | status→APPROVED, committed += amount | FORBIDDEN, VALIDATION_ERROR, NOT_FOUND, INVALID_TRANSITION, INSUFFICIENT_FUNDS |
+| `reject_request` | Reject a PENDING request. PROGRAM_MANAGER only. Funding unchanged | `request_id, reason?` | `{request: Request, fund: FundSummary}` | status→REJECTED | FORBIDDEN, VALIDATION_ERROR, NOT_FOUND, INVALID_TRANSITION |
+| `record_payment` | Record the simulated full payment of an APPROVED request, once. FINANCE only. committed → paid; available unchanged | `request_id` | `{request: Request, fund: FundSummary}` | status→PAID, payment_reference set | FORBIDDEN, VALIDATION_ERROR, NOT_FOUND, INVALID_TRANSITION |
 
 ### 5.3 Errors
 
-Business errors return a tool result with `isError: true` and a JSON body:
+Business errors (and INTERNAL_ERROR) return a tool result with `isError: true` and a JSON body:
 ```json
 { "error": { "code": "INSUFFICIENT_FUNDS", "message": "Fund has 200.00 available; request needs 300.00.",
              "details": { "available": "200.00", "requested": "300.00" } } }
@@ -365,3 +363,4 @@ pytest on a fresh seeded temp SQLite file per test (no DB mocks); every failure 
 | 1.1 | 2026-11-18 | §3.4: malformed `purpose`/`status` values sent over MCP are rejected by the SDK's schema validation (enum in `inputSchema`) before business validation; the service still validates them (VALIDATION_ERROR) for non-MCP callers. | Publishing enums in the input schema makes allowed values discoverable to AI clients. |
 | 1.2 | 2026-11-18 | Added AC-20…AC-23 (concurrent duplicate approve/pay, spoofed identity arguments, malformed ids, stdout purity). Blank rejection `reason` is stored as null. | Cross-check of the brief against code found these behaviors implemented or required but not pinned by an acceptance criterion/test; id validation (§3.4) was specified but not yet enforced — fixed in code. |
 | 1.3 | 2026-11-18 | Editorial: condensed narrative in §1, §3.3, §4, §6, §9, §10. No behavior change. | Brief's ~3-page guideline for written documentation. |
+| 1.4 | 2026-11-18 | §5.2: added the published description per tool and VALIDATION_ERROR for id-taking tools; INTERNAL_ERROR body now includes empty `details`. Tests added for AC-16 (CW approve FORBIDDEN), AC-22 (well-formed unknown id → NOT_FOUND) and REQ-ST-2 timestamps. | Final audit against the brief: tool descriptions were only shown by example; v1.2 id validation hadn't been reflected in §5.2; three AC clauses lacked an assertion. |

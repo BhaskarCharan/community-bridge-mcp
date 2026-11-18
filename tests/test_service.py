@@ -8,9 +8,11 @@ import pytest
 
 from community_bridge.domain import RequestStatus
 from community_bridge.errors import (
+    Forbidden,
     IdempotencyConflict,
     InsufficientFunds,
     InvalidTransition,
+    NotFound,
     ValidationFailed,
 )
 from community_bridge.service import AssistanceService
@@ -42,7 +44,9 @@ def test_ac1_full_lifecycle_matches_business_example(
     paid = service.record_payment(FIN, request_id)
     assert paid.request.status is RequestStatus.PAID
     assert paid.request.payment_reference and paid.request.payment_reference.startswith("SIM-")
-    assert paid.request.paid_by == FIN and paid.request.decided_by == PM  # REQ-ST-2
+    assert paid.request.paid_by == FIN and paid.request.decided_by == PM  # REQ-ST-2 actors
+    assert paid.request.decided_at and paid.request.paid_at  # REQ-ST-2 timestamps (UTC ISO)
+    assert paid.request.created_at <= paid.request.decided_at <= paid.request.paid_at
     assert fund_cents(db_path, RENT) == (1_000_000, 0, 30_000)
     assert paid.fund.fund.available_cents == 970_000  # unchanged by payment
     assert_balances_match_requests(db_path)
@@ -215,6 +219,9 @@ def test_ac16_prompt_injection_text_is_inert(service: AssistanceService) -> None
     )
     assert result.request.description == text
     assert result.request.status is RequestStatus.PENDING
+    with pytest.raises(Forbidden):  # the text changed nothing about who the caller is
+        service.approve_request(CW, result.request.request_id)
+    assert service.get_request(CW, result.request.request_id).status is RequestStatus.PENDING
 
 
 def test_ac19_balances_track_requests_through_mixed_operations(
@@ -274,3 +281,17 @@ def test_blank_reject_reason_is_stored_as_none(service: AssistanceService) -> No
     """REQ-REJ-1: reason is optional; whitespace means 'no reason'."""
     request_id = create(service)
     assert service.reject_request(PM, request_id, reason="   ").request.decision_reason is None
+
+
+def test_ac22_well_formed_unknown_ids_are_not_found(
+    service: AssistanceService, db_path: Path
+) -> None:
+    """AC-22 counterpart: a valid-looking id that doesn't exist is NOT_FOUND, not invalid."""
+    before = db_state(db_path)
+    with pytest.raises(NotFound):
+        service.get_request(CW, "req_000000000000")
+    with pytest.raises(NotFound):
+        service.approve_request(PM, "req_000000000000")
+    with pytest.raises(NotFound):
+        service.get_participant(CW, "par_bridge_999")
+    assert db_state(db_path) == before

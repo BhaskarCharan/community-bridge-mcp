@@ -9,6 +9,8 @@ A headless MCP server (stdio) for submitting, approving and paying emergency-ass
 | [AI_WORKFLOW.md](AI_WORKFLOW.md) | Three AI-assisted examples with evidence and corrections |
 | [CLAUDE.md](CLAUDE.md) | Rules given to the AI coding agent (scope, invariants, architecture) |
 
+**Length note:** the narrative (this README, AI_WORKFLOW and SPEC prose) is the ~3-page core. SPEC's requirement, schema and acceptance-criteria tables and TRACEABILITY are reference material, kept complete on purpose so the spec is implementable without guessing.
+
 ## Setup and run
 
 Requirements: [uv](https://docs.astral.sh/uv/) (it downloads Python 3.12 automatically). Dependencies are pinned in `pyproject.toml` (`==`) and `uv.lock`: `mcp==2.3.0`; dev: `pytest==9.2.0`, `ruff==0.17.5`, `mypy==2.4.1`.
@@ -52,7 +54,7 @@ One server entry per identity — identity is fixed at launch, never passed in t
 }
 ```
 
-**Tools (11):** `whoami`, `list_participants`, `get_participant`, `list_funds`, `get_funding_summary`, `create_assistance_request`, `list_requests`, `get_request`, `approve_request`, `reject_request`, `record_payment`. Each publishes input and output schemas; errors are `isError: true` with body `{"error": {"code", "message", "details"}}` (SPEC §5).
+**Tools (11):** `whoami`, `list_participants`, `get_participant`, `list_funds`, `get_funding_summary`, `create_assistance_request`, `list_requests`, `get_request`, `approve_request`, `reject_request`, `record_payment`. Each publishes input and output schemas; business errors are `isError: true` with body `{"error": {"code", "message", "details"}}`; arguments of the wrong type are rejected earlier by the SDK's input-schema validation (SPEC §5).
 
 ## Architecture
 
@@ -77,7 +79,7 @@ Writes run in one SQLite transaction opened with `BEGIN IMMEDIATE` (writers seri
 $ make check
 ruff check: All checks passed!   ruff format --check: 30 files already formatted
 mypy (strict): Success: no issues found in 24 source files
-pytest: 94 passed
+pytest: 95 passed
 $ make demo   → Result: allocation 10000.00 | committed 0.00 | paid 300.00 | available 9700.00 USD
 ```
 

@@ -7,10 +7,11 @@ install:          ## Install exact pinned dependencies (Python 3.12)
 	uv sync --locked
 
 reset:            ## Recreate and seed the SQLite DB (separate from server startup)
-	uv run python -m community_bridge.seed --db $(DB)
+	@uv run python -m community_bridge.seed --db $(DB)
 
+# '@' prefixes matter: make would otherwise echo the command onto stdout = the MCP stream.
 run:              ## Start the MCP server on stdio; requires CB_STAFF_ID, e.g. make run CB_STAFF_ID=stf_bridge_cw
-	CB_DB_PATH=$(DB) uv run python -m community_bridge
+	@CB_DB_PATH=$(DB) uv run python -m community_bridge
 
 test:             ## Run the full test suite
 	uv run pytest -v
@@ -26,7 +27,7 @@ check: lint typecheck test   ## Verification gate: must be green before a task i
 
 demo:             ## Reset DB, then run the scripted MCP client demo (no LLM)
 	$(MAKE) reset
-	CB_DB_PATH=$(DB) uv run python scripts/demo.py
+	@CB_DB_PATH=$(DB) uv run python scripts/demo.py
 
 package:          ## Zip of committed files + git history (proves spec-before-code), no .venv/data
 	rm -rf dist && mkdir -p dist
