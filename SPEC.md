@@ -1,6 +1,6 @@
 # Community Bridge — Emergency Assistance Funding MCP Server
 
-**Specification v1.2** · 2026-11-18 (initial pre-implementation v1.0 preserved in [docs/SPEC_v1.0_initial.md](docs/SPEC_v1.0_initial.md), commit `bb93cbe`)
+**Specification v1.3** · 2026-11-18 (initial pre-implementation v1.0 preserved in [docs/SPEC_v1.0_initial.md](docs/SPEC_v1.0_initial.md), commit `5e5510b`)
 Changes after v1.0 are recorded in [§12 Revisions](#12-revisions).
 
 ---
